@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Production build
+client/build/
+
+# Data file (optional - remove this line if you want to commit data)
+server/data.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

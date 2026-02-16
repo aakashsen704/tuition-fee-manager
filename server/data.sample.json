@@ -1,0 +1,42 @@
+{
+  "students": [
+    {
+      "id": "1708080000001",
+      "name": "Rahul Sharma",
+      "parentName": "Mr. Rajesh Sharma",
+      "phone": "9876543210",
+      "class": "10th CBSE",
+      "monthlyFee": "2000",
+      "joinedDate": "2024-01-15T00:00:00.000Z",
+      "active": true
+    },
+    {
+      "id": "1708080000002",
+      "name": "Priya Patel",
+      "parentName": "Mrs. Meera Patel",
+      "phone": "9876543211",
+      "class": "12th Science",
+      "monthlyFee": "2500",
+      "joinedDate": "2024-01-20T00:00:00.000Z",
+      "active": true
+    }
+  ],
+  "payments": [
+    {
+      "id": "1708090000001",
+      "studentId": "1708080000001",
+      "amount": "4000",
+      "months": ["2024-01", "2024-02"],
+      "paymentDate": "2024-01-15T00:00:00.000Z",
+      "remarks": "Cash payment"
+    },
+    {
+      "id": "1708090000002",
+      "studentId": "1708080000002",
+      "amount": "2500",
+      "months": ["2024-01"],
+      "paymentDate": "2024-01-20T00:00:00.000Z",
+      "remarks": "Google Pay"
+    }
+  ]
+}
