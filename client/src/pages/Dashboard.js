@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 
 function Dashboard() {
@@ -11,28 +11,17 @@ function Dashboard() {
 
   const [recentPayments, setRecentPayments] = useState([]);
   const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(false); // NEW: Loading state
+  const [loading, setLoading] = useState(false);
 
-// eslint-disable-next-line react-hooks/exhaustive-deps
-useEffect(() => {
-  fetchDashboardData();
-}, []); 
-
-  const fetchDashboardData = async () => {
+  // ✅ Wrap fetchDashboardData with useCallback to fix ESLint/CI errors
+  const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     try {
       // Fetch students
-      const { data: studentsData } = await supabase
-        .from('students')
-        .select('*');
+      const { data: studentsData } = await supabase.from('students').select('*');
 
       // Fetch payments
-      const { data: paymentsData } = await supabase
-        .from('payments')
-        .select('*');
-
-      console.log('Students:', studentsData); // DEBUG
-      console.log('Payments:', paymentsData); // DEBUG
+      const { data: paymentsData } = await supabase.from('payments').select('*');
 
       if (!studentsData || !paymentsData) return;
 
@@ -52,10 +41,7 @@ useEffect(() => {
       const currentMonthRevenue = paymentsData
         .filter(payment => {
           const date = new Date(payment.payment_date);
-          return (
-            date.getMonth() === currentMonth &&
-            date.getYear() === currentYear - 1900 // Fixed for Safari
-          );
+          return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
         })
         .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0);
 
@@ -78,7 +64,12 @@ useEffect(() => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // ✅ no changing dependencies
+
+  // ✅ Correct useEffect with dependency
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const getStudentName = (studentId) => {
     const student = students.find(s => s.id === studentId);
@@ -95,7 +86,7 @@ useEffect(() => {
 
   return (
     <div className="dashboard">
-      {/* NEW: Header with Refresh Button */}
+      {/* Header with Refresh Button */}
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 

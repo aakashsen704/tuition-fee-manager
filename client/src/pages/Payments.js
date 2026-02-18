@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 
 function Payments() {
@@ -10,20 +10,19 @@ function Payments() {
   const [selectedMonths, setSelectedMonths] = useState([]);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
-  const [loading, setLoading] = useState(false); // NEW: Loading state
+  const [loading, setLoading] = useState(false);
 
-// eslint-disable-next-line react-hooks/exhaustive-deps
-useEffect(() => {
-  fetchAllData();
-}, []); 
-
-
-  // ✅ Fetch both students + payments
-  const fetchAllData = async () => {
+  // ✅ Wrap fetchAllData with useCallback to avoid ESLint warning
+  const fetchAllData = useCallback(async () => {
     setLoading(true);
     await Promise.all([fetchStudents(), fetchPayments()]);
     setLoading(false);
-  };
+  }, []);
+
+  // ✅ Correct useEffect
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
 
   // ✅ Fetch active students
   const fetchStudents = async () => {
@@ -85,7 +84,7 @@ useEffect(() => {
     );
   };
 
-  // ✅ Record payment - ALREADY AUTO-REFRESHES
+  // ✅ Record payment
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
 
@@ -113,8 +112,8 @@ useEffect(() => {
     }
 
     alert('Payment recorded successfully!');
-    fetchPayments(); // ✅ Already refreshes payments
-    fetchStudents(); // ✅ Also refresh students (in case needed)
+    fetchPayments();
+    fetchStudents();
     resetForm();
   };
 
@@ -122,7 +121,7 @@ useEffect(() => {
   const handleDeletePayment = async (paymentId) => {
     if (window.confirm('Delete this payment?')) {
       await supabase.from('payments').delete().eq('id', paymentId);
-      fetchPayments(); // ✅ Already refreshes
+      fetchPayments();
     }
   };
 
@@ -166,7 +165,6 @@ useEffect(() => {
 
   return (
     <div className="payments-page">
-      {/* NEW: Header with Refresh Button */}
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
