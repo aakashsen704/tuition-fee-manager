@@ -12,9 +12,10 @@ function Payments() {
   const [remarks, setRemarks] = useState('');
   const [loading, setLoading] = useState(false); // NEW: Loading state
 
+// eslint-disable-next-line react-hooks/exhaustive-deps
 useEffect(() => {
   fetchAllData();
-}, []); // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []); 
 
 
   // ✅ Fetch both students + payments
