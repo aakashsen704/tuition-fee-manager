@@ -1,10 +1,10 @@
 {
   "name": "tuition-fee-manager",
   "version": "1.0.0",
-  "description": "Student fee management system for tuition teachers",
   "scripts": {
-    "build": "cd client && CI=false npm run build"
+    "build": "cd client && cross-env CI=false npm run build"
   },
-  "author": "",
-  "license": "MIT"
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  }
 }
