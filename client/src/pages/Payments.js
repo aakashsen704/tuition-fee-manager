@@ -1,36 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { supabase } from '../supabase';
 
 function Payments() {
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [viewMode, setViewMode] = useState('all'); // 'all' or 'student'
+  const [viewMode, setViewMode] = useState('all');
   const [selectedMonths, setSelectedMonths] = useState([]);
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
+  const [loading, setLoading] = useState(false); // NEW: Loading state
 
   useEffect(() => {
-    fetchStudents();
-    fetchPayments();
+    fetchAllData();
   }, []);
 
+  // ✅ Fetch both students + payments
+  const fetchAllData = async () => {
+    setLoading(true);
+    await Promise.all([fetchStudents(), fetchPayments()]);
+    setLoading(false);
+  };
+
+  // ✅ Fetch active students
   const fetchStudents = async () => {
-    try {
-      const response = await axios.get('/api/students');
-      setStudents(response.data.filter(s => s.active));
-    } catch (error) {
-      console.error('Error fetching students:', error);
+    const { data } = await supabase
+      .from('students')
+      .select('*')
+      .eq('active', true);
+
+    if (data) {
+      setStudents(data);
     }
   };
 
+  // ✅ Fetch all payments
   const fetchPayments = async () => {
-    try {
-      const response = await axios.get('/api/payments');
-      setPayments(response.data);
-    } catch (error) {
-      console.error('Error fetching payments:', error);
+    const { data } = await supabase
+      .from('payments')
+      .select('*')
+      .order('payment_date', { ascending: false });
+
+    if (data) {
+      setPayments(data);
     }
   };
 
@@ -41,71 +54,73 @@ function Payments() {
     setSelectedMonths([]);
   };
 
+  // Generate month options
   const generateMonthOptions = () => {
     const months = [];
     const currentDate = new Date();
-    
-    // Generate last 12 months and next 3 months
+
     for (let i = 12; i >= -3; i--) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
       const monthKey = date.toISOString().slice(0, 7);
       const monthName = date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
       months.push({ key: monthKey, name: monthName });
     }
-    
+
     return months;
   };
 
   const getPaidMonths = (studentId) => {
     return payments
-      .filter(p => p.studentId === studentId)
-      .flatMap(p => p.months);
+      .filter(p => p.student_id === studentId)
+      .flatMap(p => p.months || []);
   };
 
   const toggleMonth = (monthKey) => {
-    setSelectedMonths(prev => 
+    setSelectedMonths(prev =>
       prev.includes(monthKey)
         ? prev.filter(m => m !== monthKey)
         : [...prev, monthKey].sort()
     );
   };
 
+  // ✅ Record payment - ALREADY AUTO-REFRESHES
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (selectedMonths.length === 0) {
       alert('Please select at least one month');
       return;
     }
 
-    const amount = selectedStudent.monthlyFee * selectedMonths.length;
+    const amount = selectedStudent.monthly_fee * selectedMonths.length;
 
-    try {
-      await axios.post('/api/payments', {
-        studentId: selectedStudent.id,
+    const { error } = await supabase.from('payments').insert([
+      {
+        student_id: selectedStudent.id,
         amount,
         months: selectedMonths,
-        paymentDate,
-        remarks
-      });
+        payment_date: paymentDate,
+        remarks: remarks || ''
+      }
+    ]);
 
-      alert('Payment recorded successfully!');
-      fetchPayments();
-      resetForm();
-    } catch (error) {
-      console.error('Error recording payment:', error);
-      alert('Error recording payment. Please try again.');
+    if (error) {
+      alert('Error recording payment');
+      console.error(error);
+      return;
     }
+
+    alert('Payment recorded successfully!');
+    fetchPayments(); // ✅ Already refreshes payments
+    fetchStudents(); // ✅ Also refresh students (in case needed)
+    resetForm();
   };
 
+  // ✅ Delete payment
   const handleDeletePayment = async (paymentId) => {
-    if (window.confirm('Are you sure you want to delete this payment record?')) {
-      try {
-        await axios.delete(`/api/payments/${paymentId}`);
-        fetchPayments();
-      } catch (error) {
-        console.error('Error deleting payment:', error);
-      }
+    if (window.confirm('Delete this payment?')) {
+      await supabase.from('payments').delete().eq('id', paymentId);
+      fetchPayments(); // ✅ Already refreshes
     }
   };
 
@@ -120,19 +135,18 @@ function Payments() {
 
   const getStudentPayments = (studentId) => {
     return payments
-      .filter(p => p.studentId === studentId)
-      .sort((a, b) => new Date(a.paymentDate) - new Date(b.paymentDate));
+      .filter(p => p.student_id === studentId)
+      .sort((a, b) => new Date(a.payment_date) - new Date(b.payment_date));
   };
 
   const getStudentTotalPaid = (studentId) => {
     return payments
-      .filter(p => p.studentId === studentId)
-      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+      .filter(p => p.student_id === studentId)
+      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
   };
 
   const getStudentPaidMonthsCount = (studentId) => {
-    const paidMonths = getPaidMonths(studentId);
-    return paidMonths.length;
+    return getPaidMonths(studentId).length;
   };
 
   const formatDate = (dateString) => {
@@ -150,233 +164,158 @@ function Payments() {
 
   return (
     <div className="payments-page">
-      <div className="page-header">
-        <h2 className="page-title">Fee Payments</h2>
-        {viewMode === 'student' && (
-          <button className="btn btn-secondary" onClick={viewAllPayments}>
-            ← Back to All Students
-          </button>
-        )}
+      {/* NEW: Header with Refresh Button */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: '20px',
+        padding: '10px 0'
+      }}>
+        <div className="page-header">
+          <h2 className="page-title">Fee Payments</h2>
+          {viewMode === 'student' && (
+            <button className="btn btn-secondary" onClick={viewAllPayments}>
+              ← Back
+            </button>
+          )}
+        </div>
+        
+        <button 
+          onClick={fetchAllData} 
+          disabled={loading}
+          style={{
+            padding: '10px 20px',
+            background: loading ? '#94a3b8' : '#6366f1',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          {loading ? '🔄 Refreshing...' : '🔄 Refresh'}
+        </button>
       </div>
 
-      {viewMode === 'all' ? (
-        // ALL STUDENTS VIEW - Like diary index
-        <div className="students-ledger-list">
-          <h3>Select Student to View/Add Payments (Like Your Diary Pages)</h3>
-          <p className="helper-text">Click on any student to see their complete payment record</p>
-          
-          <div className="student-cards-grid">
-            {students.map(student => {
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '50px' }}>
+          <p>Loading payments...</p>
+        </div>
+      ) : viewMode === 'all' ? (
+        <div className="student-cards-grid">
+          {students.length === 0 ? (
+            <p>No active students found</p>
+          ) : (
+            students.map(student => {
               const totalPaid = getStudentTotalPaid(student.id);
               const monthsPaid = getStudentPaidMonthsCount(student.id);
               const studentPayments = getStudentPayments(student.id);
               const lastPayment = studentPayments[studentPayments.length - 1];
-              
+
               return (
-                <div 
-                  key={student.id} 
+                <div
+                  key={student.id}
                   className="student-ledger-card"
                   onClick={() => {
                     setSelectedStudent(student);
                     setViewMode('student');
                   }}
                 >
-                  <div className="student-card-header">
-                    <h4>{student.name}</h4>
-                    <span className="student-class">{student.class}</span>
-                  </div>
-                  <div className="student-card-stats">
-                    <div className="stat-item">
-                      <span className="stat-label">Monthly Fee:</span>
-                      <span className="stat-value">₹{student.monthlyFee}</span>
-                    </div>
-                    <div className="stat-item">
-                      <span className="stat-label">Total Paid:</span>
-                      <span className="stat-value amount">₹{totalPaid.toFixed(2)}</span>
-                    </div>
-                    <div className="stat-item">
-                      <span className="stat-label">Months Paid:</span>
-                      <span className="stat-value">{monthsPaid} months</span>
-                    </div>
-                    {lastPayment && (
-                      <div className="stat-item">
-                        <span className="stat-label">Last Payment:</span>
-                        <span className="stat-value">{formatDate(lastPayment.paymentDate)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="card-footer">
-                    <span className="view-link">Click to view ledger →</span>
-                  </div>
+                  <h4>{student.name}</h4>
+                  <p>Class: {student.class}</p>
+                  <p>Monthly Fee: ₹{student.monthly_fee}</p>
+                  <p>Total Paid: ₹{totalPaid.toFixed(2)}</p>
+                  <p>Months Paid: {monthsPaid}</p>
+                  {lastPayment && (
+                    <p>Last Payment: {formatDate(lastPayment.payment_date)}</p>
+                  )}
                 </div>
               );
-            })}
-          </div>
+            })
+          )}
         </div>
       ) : (
-        // SINGLE STUDENT VIEW - Like a diary page
-        <div className="student-ledger-view">
-          <div className="ledger-header">
-            <div className="student-info-banner">
-              <h3>📖 Payment Ledger: {selectedStudent.name}</h3>
-              <div className="student-details">
-                <span>Class: {selectedStudent.class}</span>
-                <span>Monthly Fee: ₹{selectedStudent.monthlyFee}</span>
-                <span>Phone: {selectedStudent.phone}</span>
-                <span>Parent: {selectedStudent.parentName}</span>
-              </div>
-            </div>
-            
-            <div className="ledger-summary">
-              <div className="summary-card">
-                <span className="summary-label">Total Paid</span>
-                <span className="summary-value">₹{getStudentTotalPaid(selectedStudent.id).toFixed(2)}</span>
-              </div>
-              <div className="summary-card">
-                <span className="summary-label">Months Paid</span>
-                <span className="summary-value">{getStudentPaidMonthsCount(selectedStudent.id)} months</span>
-              </div>
-            </div>
-          </div>
+        <div>
+          <h3>Ledger: {selectedStudent.name}</h3>
 
-          <div className="add-payment-section">
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowPaymentForm(!showPaymentForm)}
-            >
-              {showPaymentForm ? '✕ Cancel' : '+ Add New Payment'}
-            </button>
-          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowPaymentForm(!showPaymentForm)}
+          >
+            {showPaymentForm ? 'Cancel' : '+ Add Payment'}
+          </button>
 
           {showPaymentForm && (
-            <div className="payment-form-container">
-              <h3>Add Payment for {selectedStudent.name}</h3>
-              <form onSubmit={handlePaymentSubmit} className="payment-form">
-            <div className="months-section">
-              <label>Select Months to Pay For *</label>
-              <p className="helper-text">
-                Click on months to select/deselect. Green = Already paid, Blue = Selected
-              </p>
-              
+            <form onSubmit={handlePaymentSubmit}>
               <div className="months-grid">
                 {monthOptions.map(month => {
                   const isPaid = paidMonths.includes(month.key);
                   const isSelected = selectedMonths.includes(month.key);
-                  
+
                   return (
                     <button
                       key={month.key}
                       type="button"
-                      className={`month-btn ${isPaid ? 'paid' : ''} ${isSelected ? 'selected' : ''}`}
-                      onClick={() => !isPaid && toggleMonth(month.key)}
                       disabled={isPaid}
+                      onClick={() => toggleMonth(month.key)}
+                      className={`month-btn ${isPaid ? 'paid' : ''} ${isSelected ? 'selected' : ''}`}
                     >
                       {month.name}
-                      {isPaid && ' ✓'}
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {selectedMonths.length > 0 && (
-              <div className="payment-summary">
-                <h4>Payment Summary</h4>
-                <p>Months selected: {selectedMonths.length}</p>
-                <p>Monthly fee: ₹{selectedStudent.monthlyFee}</p>
-                <p className="total-amount">
-                  <strong>Total Amount: ₹{(selectedStudent.monthlyFee * selectedMonths.length).toFixed(2)}</strong>
-                </p>
-              </div>
-            )}
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                required
+              />
 
-            <div className="form-row">
-              <div className="form-group">
-                <label>Payment Date *</label>
-                <input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  required
-                />
-              </div>
+              <input
+                type="text"
+                placeholder="Remarks"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
 
-              <div className="form-group">
-                <label>Remarks (Optional)</label>
-                <input
-                  type="text"
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="e.g., Paid by Paytm, Cash, etc."
-                />
-              </div>
-            </div>
-
-            <div className="form-actions">
               <button type="submit" className="btn btn-primary">
                 Record Payment
               </button>
-              <button type="button" className="btn btn-secondary" onClick={resetForm}>
-                Cancel
-              </button>
-            </div>
-          </form>
-            </div>
+            </form>
           )}
 
-          {/* PAYMENT HISTORY FOR THIS STUDENT - Like diary page entries */}
-          <div className="student-payment-history">
-            <h3>Payment History</h3>
-            <div className="table-container">
-              <table className="data-table ledger-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Months Paid For</th>
-                    <th>Amount</th>
-                    <th>Remarks</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {getStudentPayments(selectedStudent.id).length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="no-data">
-                        No payments recorded yet for {selectedStudent.name}
-                      </td>
-                    </tr>
-                  ) : (
-                    getStudentPayments(selectedStudent.id).map(payment => (
-                      <tr key={payment.id}>
-                        <td>{formatDate(payment.paymentDate)}</td>
-                        <td className="months-list">
-                          {payment.months.map(m => formatMonthName(m)).join(', ')}
-                        </td>
-                        <td className="amount">₹{parseFloat(payment.amount).toFixed(2)}</td>
-                        <td>{payment.remarks || '-'}</td>
-                        <td className="actions">
-                          <button 
-                            className="btn-icon btn-delete"
-                            onClick={() => handleDeletePayment(payment.id)}
-                            title="Delete"
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                  {getStudentPayments(selectedStudent.id).length > 0 && (
-                    <tr className="total-row">
-                      <td colSpan="2"><strong>Total</strong></td>
-                      <td className="amount"><strong>₹{getStudentTotalPaid(selectedStudent.id).toFixed(2)}</strong></td>
-                      <td colSpan="2"></td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <h3>Payment History</h3>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Months</th>
+                <th>Amount</th>
+                <th>Remarks</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {getStudentPayments(selectedStudent.id).map(payment => (
+                <tr key={payment.id}>
+                  <td>{formatDate(payment.payment_date)}</td>
+                  <td>
+                    {payment.months.map(m => formatMonthName(m)).join(', ')}
+                  </td>
+                  <td>₹{parseFloat(payment.amount).toFixed(2)}</td>
+                  <td>{payment.remarks}</td>
+                  <td>
+                    <button onClick={() => handleDeletePayment(payment.id)}>
+                      🗑️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

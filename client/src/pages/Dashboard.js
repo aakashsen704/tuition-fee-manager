@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { supabase } from '../supabase';
 
 function Dashboard() {
   const [stats, setStats] = useState({
@@ -8,31 +8,74 @@ function Dashboard() {
     totalRevenue: 0,
     currentMonthRevenue: 0
   });
+
   const [recentPayments, setRecentPayments] = useState([]);
   const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(false); // NEW: Loading state
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
+    setLoading(true);
     try {
-      const [statsRes, paymentsRes, studentsRes] = await Promise.all([
-        axios.get('/api/dashboard/stats'),
-        axios.get('/api/payments'),
-        axios.get('/api/students')
-      ]);
+      // Fetch students
+      const { data: studentsData } = await supabase
+        .from('students')
+        .select('*');
 
-      setStats(statsRes.data);
-      setStudents(studentsRes.data);
-      
-      // Get 5 most recent payments
-      const recent = paymentsRes.data
-        .sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate))
+      // Fetch payments
+      const { data: paymentsData } = await supabase
+        .from('payments')
+        .select('*');
+
+      console.log('Students:', studentsData); // DEBUG
+      console.log('Payments:', paymentsData); // DEBUG
+
+      if (!studentsData || !paymentsData) return;
+
+      setStudents(studentsData);
+
+      const totalStudents = studentsData.length;
+      const activeStudents = studentsData.filter(s => s.active).length;
+
+      const totalRevenue = paymentsData.reduce(
+        (sum, payment) => sum + parseFloat(payment.amount || 0),
+        0
+      );
+
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+
+      const currentMonthRevenue = paymentsData
+        .filter(payment => {
+          const date = new Date(payment.payment_date);
+          return (
+            date.getMonth() === currentMonth &&
+            date.getYear() === currentYear - 1900 // Fixed for Safari
+          );
+        })
+        .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0);
+
+      setStats({
+        totalStudents,
+        activeStudents,
+        totalRevenue,
+        currentMonthRevenue
+      });
+
+      // Sort latest 5 payments
+      const recent = paymentsData
+        .sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date))
         .slice(0, 5);
+
       setRecentPayments(recent);
+
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('Dashboard error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -46,13 +89,38 @@ function Dashboard() {
   };
 
   const formatCurrency = (amount) => {
-    return `₹${parseFloat(amount).toFixed(2)}`;
+    return `₹${parseFloat(amount || 0).toFixed(2)}`;
   };
 
   return (
     <div className="dashboard">
-      <h2 className="page-title">Dashboard</h2>
-      
+      {/* NEW: Header with Refresh Button */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: '20px',
+        padding: '10px 0'
+      }}>
+        <h2 className="page-title">Dashboard</h2>
+        <button 
+          onClick={fetchDashboardData} 
+          disabled={loading}
+          style={{
+            padding: '10px 20px',
+            background: loading ? '#94a3b8' : '#6366f1',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}
+        >
+          {loading ? '🔄 Refreshing...' : '🔄 Refresh Data'}
+        </button>
+      </div>
+
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon">👥</div>
@@ -84,13 +152,13 @@ function Dashboard() {
         <div className="stat-card">
           <div className="stat-icon">📊</div>
           <div className="stat-info">
-            <h3>Average Fee</h3>
+            <h3>Average Revenue</h3>
             <p className="stat-value">
-              {stats.activeStudents > 0 
-                ? formatCurrency(stats.totalRevenue / stats.activeStudents) 
+              {stats.activeStudents > 0
+                ? formatCurrency(stats.totalRevenue / stats.activeStudents)
                 : '₹0.00'}
             </p>
-            <span className="stat-label">Per Student</span>
+            <span className="stat-label">Per Active Student</span>
           </div>
         </div>
       </div>
@@ -103,22 +171,22 @@ function Dashboard() {
               <tr>
                 <th>Student</th>
                 <th>Amount</th>
-                <th>Months Paid</th>
                 <th>Date</th>
               </tr>
             </thead>
             <tbody>
               {recentPayments.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="no-data">No payments recorded yet</td>
+                  <td colSpan="3" className="no-data">
+                    {loading ? 'Loading payments...' : 'No payments recorded yet'}
+                  </td>
                 </tr>
               ) : (
                 recentPayments.map(payment => (
                   <tr key={payment.id}>
-                    <td>{getStudentName(payment.studentId)}</td>
+                    <td>{getStudentName(payment.student_id)}</td>
                     <td className="amount">{formatCurrency(payment.amount)}</td>
-                    <td>{payment.months.length} month(s)</td>
-                    <td>{formatDate(payment.paymentDate)}</td>
+                    <td>{formatDate(payment.payment_date)}</td>
                   </tr>
                 ))
               )}
