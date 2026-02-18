@@ -19,15 +19,8 @@
       "dest": "server/index.js"
     },
     {
-      "handle": "filesystem"
-    },
-    {
       "src": "/(.*)",
       "dest": "/client/build/index.html"
     }
-  ],
-  "buildCommand": "cd client && npm install && npm run build",
-  "outputDirectory": "client/build",
-  "framework": null,
-  "rootDirectory": "."
+  ]
 }
