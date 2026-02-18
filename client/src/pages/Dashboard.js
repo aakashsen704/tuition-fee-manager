@@ -13,14 +13,10 @@ function Dashboard() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ Wrap fetchDashboardData with useCallback to fix ESLint/CI errors
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch students
       const { data: studentsData } = await supabase.from('students').select('*');
-
-      // Fetch payments
       const { data: paymentsData } = await supabase.from('payments').select('*');
 
       if (!studentsData || !paymentsData) return;
@@ -31,8 +27,7 @@ function Dashboard() {
       const activeStudents = studentsData.filter(s => s.active).length;
 
       const totalRevenue = paymentsData.reduce(
-        (sum, payment) => sum + parseFloat(payment.amount || 0),
-        0
+        (sum, payment) => sum + parseFloat(payment.amount || 0), 0
       );
 
       const currentMonth = new Date().getMonth();
@@ -45,14 +40,8 @@ function Dashboard() {
         })
         .reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0);
 
-      setStats({
-        totalStudents,
-        activeStudents,
-        totalRevenue,
-        currentMonthRevenue
-      });
+      setStats({ totalStudents, activeStudents, totalRevenue, currentMonthRevenue });
 
-      // Sort latest 5 payments
       const recent = paymentsData
         .sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date))
         .slice(0, 5);
@@ -64,53 +53,117 @@ function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []); // ✅ no changing dependencies
+  }, []);
 
-  // ✅ Correct useEffect with dependency
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  // ✅ Delete a single payment
+  const handleDeletePayment = async (paymentId) => {
+    if (window.confirm('Delete this payment?')) {
+      await supabase.from('payments').delete().eq('id', paymentId);
+      fetchDashboardData();
+    }
+  };
+
+  // ✅ Reset this month's payments
+  const handleResetMonthRevenue = async () => {
+    if (!window.confirm('This will delete ALL payments for this month. Are you sure?')) return;
+
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+
+    const { data: paymentsData } = await supabase.from('payments').select('*');
+
+    const monthPaymentIds = paymentsData
+      .filter(payment => {
+        const date = new Date(payment.payment_date);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      })
+      .map(p => p.id);
+
+    if (monthPaymentIds.length === 0) {
+      alert('No payments found for this month.');
+      return;
+    }
+
+    await supabase.from('payments').delete().in('id', monthPaymentIds);
+    alert('This month payments reset successfully!');
+    fetchDashboardData();
+  };
+
+  // ✅ Reset ALL revenue
+  const handleResetAllRevenue = async () => {
+    if (!window.confirm('This will delete ALL payments forever. Are you sure?')) return;
+    await supabase.from('payments').delete().neq('id', 0);
+    alert('All payments deleted!');
+    fetchDashboardData();
+  };
+
   const getStudentName = (studentId) => {
     const student = students.find(s => s.id === studentId);
-    return student ? student.name : 'Unknown';
+    return student ? student.name : '⚠️ Deleted Student';
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-IN');
-  };
-
-  const formatCurrency = (amount) => {
-    return `₹${parseFloat(amount || 0).toFixed(2)}`;
-  };
+  const formatDate = (dateString) => new Date(dateString).toLocaleDateString('en-IN');
+  const formatCurrency = (amount) => `₹${parseFloat(amount || 0).toFixed(2)}`;
 
   return (
     <div className="dashboard">
-      {/* Header with Refresh Button */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: '20px',
         padding: '10px 0'
       }}>
         <h2 className="page-title">Dashboard</h2>
-        <button 
-          onClick={fetchDashboardData} 
-          disabled={loading}
-          style={{
-            padding: '10px 20px',
-            background: loading ? '#94a3b8' : '#6366f1',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: '14px',
-            fontWeight: '500'
-          }}
-        >
-          {loading ? '🔄 Refreshing...' : '🔄 Refresh Data'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={handleResetMonthRevenue}
+            style={{
+              padding: '10px 20px',
+              background: '#f59e0b',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            🔄 Reset This Month
+          </button>
+          <button
+            onClick={handleResetAllRevenue}
+            style={{
+              padding: '10px 20px',
+              background: '#ef4444',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            🗑️ Reset All Revenue
+          </button>
+          <button
+            onClick={fetchDashboardData}
+            disabled={loading}
+            style={{
+              padding: '10px 20px',
+              background: loading ? '#94a3b8' : '#6366f1',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            {loading ? '🔄 Refreshing...' : '🔄 Refresh'}
+          </button>
+        </div>
       </div>
 
       <div className="stats-grid">
@@ -164,12 +217,13 @@ function Dashboard() {
                 <th>Student</th>
                 <th>Amount</th>
                 <th>Date</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {recentPayments.length === 0 ? (
                 <tr>
-                  <td colSpan="3" className="no-data">
+                  <td colSpan="4" className="no-data">
                     {loading ? 'Loading payments...' : 'No payments recorded yet'}
                   </td>
                 </tr>
@@ -179,6 +233,19 @@ function Dashboard() {
                     <td>{getStudentName(payment.student_id)}</td>
                     <td className="amount">{formatCurrency(payment.amount)}</td>
                     <td>{formatDate(payment.payment_date)}</td>
+                    <td>
+                      <button
+                        onClick={() => handleDeletePayment(payment.id)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '16px'
+                        }}
+                      >
+                        🗑️
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
