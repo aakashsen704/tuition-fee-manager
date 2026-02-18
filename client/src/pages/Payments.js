@@ -41,16 +41,6 @@ function Payments() {
     setSelectedMonths([]);
   };
 
-  const handleStudentSelect = (e) => {
-    const student = students.find(s => s.id === e.target.value);
-    setSelectedStudent(student);
-    setShowPaymentForm(!!student);
-    setSelectedMonths([]);
-    if (student) {
-      setViewMode('student');
-    }
-  };
-
   const generateMonthOptions = () => {
     const months = [];
     const currentDate = new Date();
@@ -126,11 +116,6 @@ function Payments() {
     setPaymentDate(new Date().toISOString().split('T')[0]);
     setRemarks('');
     setViewMode('all');
-  };
-
-  const getStudentName = (studentId) => {
-    const student = students.find(s => s.id === studentId);
-    return student ? student.name : 'Unknown';
   };
 
   const getStudentPayments = (studentId) => {
