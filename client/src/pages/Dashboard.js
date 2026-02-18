@@ -13,9 +13,9 @@ function Dashboard() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false); // NEW: Loading state
 
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
+useEffect(() => {
+  fetchDashboardData();
+}, []); // eslint-disable-next-line react-hooks/exhaustive-deps
 
   const fetchDashboardData = async () => {
     setLoading(true);
